@@ -7,5 +7,11 @@ set(CMAKE_CXX_STANDARD 11)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-add_executable(example example.cpp)
-target_link_libraries(example Threads::Threads)
+add_library(BosmaScheduler INTERFACE)
+
+target_include_directories(BosmaScheduler INTERFACE
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
+    $<INSTALL_INTERFACE:include/BosmaScheduler>
+)
+
+add_library(scheduler ALIAS BosmaScheduler)
