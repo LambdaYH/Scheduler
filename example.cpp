@@ -40,7 +40,7 @@ int main() {
   // %Y/%m/%d %H:%M:%S, %Y-%m-%d %H:%M:%S, %H:%M:%S
   // With only a time given, it will run tomorrow if that time has already passed.
   // But with a date given, it will run immediately if that time has already passed.
-  s.at("2017-04-19 12:31:15", []() { std::cout << "at a specific time." << std::endl; });
+  s.at("2022-05-09 10:13:15", []() { std::cout << "at a specific time." << std::endl; });
 
   s.cron("5 0 * * *", []() { std::cout << "every day 5 minutes after midnight" << std::endl; });
 
