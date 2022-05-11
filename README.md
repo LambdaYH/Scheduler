@@ -1,5 +1,8 @@
 # Scheduler
-Modern C++ Header-Only Scheduling Library. Tasks run in thread pool. Requires C++11 and [ctpl_stl.h](https://github.com/vit-vit/CTPL) and [croncpp](https://github.com/mariusbancila/croncpp) in the path.
+Modern C++ Header-Only Scheduling Library. Tasks run in thread pool. Requires C++11 and [cocoyaxi](https://github.com/idealvin/cocoyaxi) and [croncpp](https://github.com/mariusbancila/croncpp) in the path.
+
+### Modified
+Replace threadpool with coroutine, supported by [cocoyaxi](https://github.com/idealvin/cocoyaxi)
 
 Inspired by the [Rufus-Scheduler](https://github.com/jmettraux/rufus-scheduler) gem. Offers mostly the same functionality.
 

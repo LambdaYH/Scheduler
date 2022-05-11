@@ -1,0 +1,3 @@
+[submodule "third-party/cocoyaxi"]
+	path = third-party/cocoyaxi
+	url = https://github.com/idealvin/cocoyaxi.git

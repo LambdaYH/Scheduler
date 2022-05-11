@@ -14,7 +14,7 @@ int main() {
 
   // Make a new scheduling object.
   // Note: s cannot be moved or copied
-  Bosma::Scheduler s(max_n_threads);
+  Bosma::Scheduler s;
 
   // every second call message("every second")
   s.every(std::chrono::seconds(1), message, "every second");
@@ -30,7 +30,7 @@ int main() {
   // different from every in that multiple instances of the function will never be run concurrently
   s.interval(std::chrono::seconds(1), []() {
       std::cout << "right away, then once every 6s" << std::endl;
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      co::sleep(5000);
   });
 
   // https://en.wikipedia.org/wiki/Cron

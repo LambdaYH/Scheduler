@@ -7,10 +7,11 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 #include "croncpp.h"
-#include "ctpl_stl.h"
+#include "co/co.h"
 
 #include "InterruptableSleep.h"
 
@@ -18,13 +19,11 @@ namespace Bosma {
 using Clock = std::chrono::system_clock;
 
 class Task {
- public:
+public:
   explicit Task(std::function<void()> &&f, const std::string &id,
                 bool recur = false, bool interval = false)
-      : f(std::move(f)),
-        task_unique_id_(id),
-        recur(recur),
-        interval(interval) {}
+      : f(std::move(f)), task_unique_id_(id), recur(recur), interval(interval) {
+  }
 
   virtual Clock::time_point get_new_time() const = 0;
 
@@ -36,7 +35,7 @@ class Task {
 };
 
 class InTask : public Task {
- public:
+public:
   explicit InTask(std::function<void()> &&f, const std::string &id)
       : Task(std::move(f), id) {}
 
@@ -47,7 +46,7 @@ class InTask : public Task {
 };
 
 class EveryTask : public Task {
- public:
+public:
   EveryTask(Clock::duration time, std::function<void()> &&f,
             const std::string &id, bool interval = false)
       : Task(std::move(f), id, true, interval), time(time) {}
@@ -59,7 +58,7 @@ class EveryTask : public Task {
 };
 
 class CronTask : public Task {
- public:
+public:
   CronTask(const std::string &expression, std::function<void()> &&f,
            const std::string &id)
       : Task(std::move(f), id, true), cron_(cron::make_cron(expression)) {}
@@ -77,21 +76,19 @@ inline bool try_parse(std::tm &tm, const std::string &expression,
 }
 
 class Scheduler {
- public:
-  explicit Scheduler(unsigned int max_n_tasks = 4)
-      : done(false), threads(max_n_tasks + 1), auto_increase_id_(0) {
-    threads.push([this](int) {
-      while (!done) {
-        if (tasks.empty()) {
-          sleeper.sleep();
-        } else {
-          auto time_of_first_task = (*tasks.begin()).first;
-          sleeper.sleep_until(time_of_first_task);
-        }
-        manage_tasks();
-      }
-    });
-  }
+public:
+  explicit Scheduler()
+      : done(false), auto_increase_id_(0), manage_thread_(std::thread{[this]() {
+          while (!done) {
+            if (tasks.empty()) {
+              sleeper.sleep();
+            } else {
+              auto time_of_first_task = (*tasks.begin()).first;
+              sleeper.sleep_until(time_of_first_task);
+            }
+            manage_tasks();
+          }
+        }}) {}
 
   Scheduler(const Scheduler &) = delete;
 
@@ -104,13 +101,14 @@ class Scheduler {
   ~Scheduler() {
     done = true;
     sleeper.interrupt();
+    manage_thread_.join();
   }
 
   bool remove(const std::string &id) {
     // id_to_task manage task's life cycle
     // run at most once after deletion
     std::lock_guard<std::mutex> locker(id_lock);
-    if(!id_to_task.count(id))
+    if (!id_to_task.count(id))
       return false;
     id_to_task.at(id)->interval = false;
     id_to_task.erase(id);
@@ -160,7 +158,8 @@ class Scheduler {
 
       // if we've already passed this time, the user will mean next day, so add
       // a day.
-      if (Clock::now() >= tp) tp += std::chrono::hours(24);
+      if (Clock::now() >= tp)
+        tp += std::chrono::hours(24);
     } else if (try_parse(tm, time, "%Y-%m-%d %H:%M:%S")) {
       tp = Clock::from_time_t(std::mktime(&tm));
     } else if (try_parse(tm, time, "%Y/%m/%d %H:%M:%S")) {
@@ -170,7 +169,7 @@ class Scheduler {
       throw std::runtime_error("Cannot parse time string: " + time);
     }
     // determine if it is a time at past
-    if(tp > Clock::now())
+    if (tp > Clock::now())
       in(id, tp, std::forward<_Callable>(f), std::forward<_Args>(args)...);
   }
 
@@ -238,7 +237,7 @@ class Scheduler {
              std::forward<_Args>(args)...);
   }
 
- private:
+private:
   std::atomic<bool> done;
 
   Bosma::InterruptableSleep sleeper;
@@ -247,8 +246,9 @@ class Scheduler {
   std::unordered_map<std::string, std::shared_ptr<Task>> id_to_task;
   std::mutex lock;
   std::mutex id_lock;
-  ctpl::thread_pool threads;
   std::atomic_size_t auto_increase_id_;
+
+  std::thread manage_thread_;
 
   std::string get_random_id() {
     auto random_id = "__internal__" + std::to_string(auto_increase_id_++);
@@ -260,7 +260,8 @@ class Scheduler {
   void add_task(const Clock::time_point time, std::shared_ptr<Task> t) {
     std::lock_guard<std::mutex> l(lock);
     tasks.emplace(time, std::weak_ptr<Task>(t));
-    if (t->task_unique_id_.empty()) t->task_unique_id_ = get_random_id();
+    if (t->task_unique_id_.empty())
+      t->task_unique_id_ = get_random_id();
     id_to_task.emplace(t->task_unique_id_, std::move(t));
     sleeper.interrupt();
   }
@@ -279,19 +280,20 @@ class Scheduler {
       for (auto i = tasks.begin(); i != end_of_tasks_to_run; ++i) {
         auto &task_weak = (*i).second;
         auto task = task_weak.lock();
-        if (!task) continue;
+        if (!task)
+          continue;
         if (task->interval) {
           // if it's an interval task, only add the task back after f() is
           // completed
-          threads.push([this, task](int) {
+          go([this, task]() {
             task->f();
             // no risk of race-condition,
             // add_task() will wait for manage_tasks() to release lock
-            if(task->interval)
+            if (task->interval)
               add_task(task->get_new_time(), std::move(task));
           });
         } else {
-          threads.push([task](int) { task->f(); });
+          go([task]() { task->f(); });
           // calculate time of next run and add the new task to the tasks to be
           // recurred
           if (task->recur)
@@ -308,4 +310,4 @@ class Scheduler {
     }
   }
 };
-}  // namespace Bosma
+} // namespace Bosma
